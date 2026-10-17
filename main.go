@@ -1,20 +1,82 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
 	"time"
 
-	"github.com/sago35/tinydisplay"
+	"github.com/ArunGautham-Soundarrajan/nomnomwatch/internal/db"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/joho/godotenv"
 )
 
-// 240x135 (LilyGo T-Display S3) or 240x240, 320x240, etc.
-const (
-	displayWidth  = 240
-	displayHeight = 135
-)
+type Server struct {
+	db      *pgxpool.Pool
+	queries *db.Queries
+}
+
+func NewServer(pool *pgxpool.Pool) *Server {
+	return &Server{
+		db:      pool,
+		queries: db.New(pool),
+	}
+}
+
+func (s *Server) health(w http.ResponseWriter, r *http.Request) {
+	err := s.db.Ping(r.Context())
+	if err != nil {
+		http.Error(w, "database not ready", http.StatusServiceUnavailable)
+		return
+	}
+
+	fmt.Fprintf(w, "Healthy")
+}
+
+func (s *Server) routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", s.health)
+	mux.HandleFunc("GET /orders", s.orders)
+	return mux
+}
+
+func (s *Server) orders(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.queries.ListOrders(r.Context())
+	if err != nil {
+		log.Printf("list orders failed: %v", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(rows)
+}
 
 func main() {
-	display, _ := tinydisplay.NewClient("127.0.0.1", 9812, displayWidth, displayHeight)
+	err := godotenv.Load()
+	if err != nil {
+		log.Println("error loading .env file")
+	}
 
-	Render(display)
-	time.Sleep(time.Minute)
+	dbpool, err := pgxpool.New(context.Background(), os.Getenv("DATABASE_URL"))
+	if err != nil {
+		log.Fatalf("database connection error: %v", err)
+	}
+	defer dbpool.Close()
+
+	if err := dbpool.Ping(context.TODO()); err != nil {
+		log.Fatalf("database ping failed: %v", err)
+	}
+
+	s := NewServer(dbpool)
+	httpSrv := &http.Server{
+		Addr:              ":8080",
+		Handler:           s.routes(),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	log.Println("listening on %s", httpSrv.Addr)
+	log.Fatal(httpSrv.ListenAndServe())
 }
