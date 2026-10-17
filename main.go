@@ -36,13 +36,6 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Healthy")
 }
 
-func (s *Server) routes() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", s.health)
-	mux.HandleFunc("GET /orders", s.orders)
-	return mux
-}
-
 func (s *Server) orders(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.queries.ListOrders(r.Context())
 	if err != nil {
@@ -53,6 +46,13 @@ func (s *Server) orders(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(rows)
+}
+
+func (s *Server) routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", s.health)
+	mux.HandleFunc("GET /orders", s.orders)
+	return mux
 }
 
 func main() {
