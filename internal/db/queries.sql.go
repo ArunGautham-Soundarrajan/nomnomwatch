@@ -7,7 +7,55 @@ package db
 
 import (
 	"context"
+	"time"
 )
+
+const getLastOrderTime = `-- name: GetLastOrderTime :one
+SELECT order_date FROM orders ORDER BY order_date DESC LIMIT 1
+`
+
+func (q *Queries) GetLastOrderTime(ctx context.Context) (time.Time, error) {
+	row := q.db.QueryRow(ctx, getLastOrderTime)
+	var order_date time.Time
+	err := row.Scan(&order_date)
+	return order_date, err
+}
+
+const listFavRestaurants = `-- name: ListFavRestaurants :many
+SELECT
+  COALESCE(SUM(total), 0)::numeric AS total,
+  restaurant_name
+FROM orders
+WHERE order_date >= $1::date
+GROUP BY restaurant_name
+ORDER BY total DESC, restaurant_name
+LIMIT 10
+`
+
+type ListFavRestaurantsRow struct {
+	Total          float64 `json:"total"`
+	RestaurantName string  `json:"restaurant_name"`
+}
+
+func (q *Queries) ListFavRestaurants(ctx context.Context, since time.Time) ([]ListFavRestaurantsRow, error) {
+	rows, err := q.db.Query(ctx, listFavRestaurants, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListFavRestaurantsRow{}
+	for rows.Next() {
+		var i ListFavRestaurantsRow
+		if err := rows.Scan(&i.Total, &i.RestaurantName); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
 
 const listOrders = `-- name: ListOrders :many
 SELECT order_id, restaurant_id, total, restaurant_name, order_date, synced_at FROM orders ORDER BY order_date DESC
@@ -30,6 +78,48 @@ func (q *Queries) ListOrders(ctx context.Context) ([]Order, error) {
 			&i.OrderDate,
 			&i.SyncedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrdersMonthly = `-- name: ListOrdersMonthly :many
+SELECT
+    m.month::date AS month,
+    COALESCE(SUM(o.total), 0)::numeric AS total,
+    COUNT(o.order_date) AS total_orders
+FROM generate_series(
+    make_date($1::int, 1, 1),
+    date_trunc('month', CURRENT_DATE)::date,
+    interval '1 month'
+) AS m(month)
+LEFT JOIN orders o
+    ON o.order_date >= m.month AND o.order_date < m.month + interval '1 month'
+GROUP BY m.month
+ORDER BY m.month
+`
+
+type ListOrdersMonthlyRow struct {
+	Month       time.Time `json:"month"`
+	Total       float64   `json:"total"`
+	TotalOrders int64     `json:"total_orders"`
+}
+
+func (q *Queries) ListOrdersMonthly(ctx context.Context, startYear int32) ([]ListOrdersMonthlyRow, error) {
+	rows, err := q.db.Query(ctx, listOrdersMonthly, startYear)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOrdersMonthlyRow{}
+	for rows.Next() {
+		var i ListOrdersMonthlyRow
+		if err := rows.Scan(&i.Month, &i.Total, &i.TotalOrders); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

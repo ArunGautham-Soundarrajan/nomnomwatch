@@ -14,7 +14,13 @@
           "emit_empty_slices": true,
           "overrides": [
             { "db_type": "timestamptz", "go_type": "time.Time" },
-            { "db_type": "pg_catalog.numeric", "go_type": "float64" }
+            { "db_type": "pg_catalog.numeric", "go_type": "float64" },
+            { "db_type": "date", "go_type": "time.Time" },
+            {
+              "db_type": "timestamptz",
+              "nullable": true,
+              "go_type": { "import": "time", "type": "Time", "pointer": true }
+            }
           ]
         }
       }
