@@ -1,4 +1,4 @@
-FROM public.ecr.aws/docker/library/golang:1.26-trixie AS build
+FROM public.ecr.aws/docker/library/golang:1.27.3-trixie AS build
 
 WORKDIR /src
 
