@@ -2,7 +2,7 @@ package server
 
 import (
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -139,12 +139,12 @@ func monthStart(t time.Time) time.Time {
 
 func render(w http.ResponseWriter, r *http.Request, c templ.Component) {
 	if err := c.Render(r.Context(), w); err != nil {
-		log.Printf("render failed: %v", err)
+		slog.ErrorContext(r.Context(), "render failed", "path", r.URL.Path, "err", err)
 	}
 }
 
 func panelError(w http.ResponseWriter, r *http.Request, panel string, err error) {
-	log.Printf("%s panel failed: %v", panel, err)
+	slog.ErrorContext(r.Context(), "panel failed", "panel", panel, "err", err)
 	w.WriteHeader(http.StatusInternalServerError)
 	render(w, r, templates.PanelError("Couldn't load this panel."))
 }
