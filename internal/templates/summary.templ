@@ -1,0 +1,13 @@
+package templates
+
+import "strconv"
+
+templ Summary(p Period, total float64, orders int64) {
+	@Tile("Spent", money(total), "", p.Label())
+	@Tile("Orders", strconv.FormatInt(orders, 10), "", p.Label())
+	if orders > 0 {
+		@Tile("Average order", money(total/float64(orders)), "", "per order")
+	} else {
+		@Tile("Average order", "—", "", "per order")
+	}
+}

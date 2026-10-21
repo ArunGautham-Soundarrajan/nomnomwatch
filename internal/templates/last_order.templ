@@ -1,0 +1,22 @@
+package templates
+
+import (
+	"strconv"
+	"time"
+)
+
+templ LastOrder(last time.Time, now time.Time) {
+	if days := daysBetween(last, now); days == 0 {
+		@Tile("Since last order", "Today", "", last.Local().Format("15:04"))
+	} else {
+		@Tile("Since last order", strconv.Itoa(days), plural(int64(days), "day", "days"), last.Local().Format("Mon 2 Jan, 15:04"))
+	}
+}
+
+templ LastOrderEmpty() {
+	@Tile("Since last order", "—", "", "No orders yet")
+}
+
+func daysBetween(from, to time.Time) int {
+	return int(to.Sub(from).Hours() / 24)
+}

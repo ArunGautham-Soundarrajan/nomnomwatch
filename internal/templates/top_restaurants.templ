@@ -1,0 +1,53 @@
+package templates
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/ArunGautham-Soundarrajan/nomnomwatch/internal/db"
+)
+
+templ TopRestaurants(p Period, rows []db.ListFavRestaurantsRow) {
+	<div class="card-head">
+		<h2>Top restaurants</h2>
+		<span>{ p.Label() }</span>
+	</div>
+	if len(rows) == 0 {
+		<p class="empty">No orders in this period.</p>
+	} else {
+		<ol class="rank">
+			for i, row := range rows {
+				<li class="rank-row" title={ fmt.Sprintf("%s · %s · %s", strings.TrimSpace(row.RestaurantName), money(row.Total), orderCount(row.OrderCount)) }>
+					<span class="rank-n">{ strconv.Itoa(i + 1) }</span>
+					<div>
+						<div class="rank-line">
+							<span class="rank-name">{ row.RestaurantName }</span>
+							<span class="rank-value">{ money(row.Total) }</span>
+						</div>
+						<div class="rank-bar">
+							<div class="track">
+								<div class="fill" style={ barWidth(row.Total, rows[0].Total) }></div>
+							</div>
+							<span class="rank-meta">{ orderCount(row.OrderCount) }</span>
+						</div>
+					</div>
+				</li>
+			}
+		</ol>
+	}
+}
+
+func orderCount(n int64) string {
+	return strconv.FormatInt(n, 10) + " " + plural(n, "order", "orders")
+}
+
+// barWidth sizes each bar relative to the top restaurant (rows are sorted by
+// total, so rows[0] is the largest).
+func barWidth(total, max float64) string {
+	pct := 0.0
+	if max > 0 {
+		pct = total / max * 100
+	}
+	return fmt.Sprintf("width: %.1f%%", pct)
+}

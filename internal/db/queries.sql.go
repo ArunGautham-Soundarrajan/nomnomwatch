@@ -10,6 +10,17 @@ import (
 	"time"
 )
 
+const getFirstOrderTime = `-- name: GetFirstOrderTime :one
+SELECT order_date FROM orders ORDER BY order_date ASC LIMIT 1
+`
+
+func (q *Queries) GetFirstOrderTime(ctx context.Context) (time.Time, error) {
+	row := q.db.QueryRow(ctx, getFirstOrderTime)
+	var order_date time.Time
+	err := row.Scan(&order_date)
+	return order_date, err
+}
+
 const getLastOrderTime = `-- name: GetLastOrderTime :one
 SELECT order_date FROM orders ORDER BY order_date DESC LIMIT 1
 `
@@ -21,24 +32,58 @@ func (q *Queries) GetLastOrderTime(ctx context.Context) (time.Time, error) {
 	return order_date, err
 }
 
+const getPeriodSummary = `-- name: GetPeriodSummary :one
+SELECT
+  COALESCE(SUM(total), 0)::numeric AS total,
+  COUNT(*) AS order_count
+FROM orders
+WHERE order_date >= $1::timestamptz
+  AND order_date < $2::timestamptz
+`
+
+type GetPeriodSummaryParams struct {
+	StartAt time.Time `json:"start_at"`
+	EndAt   time.Time `json:"end_at"`
+}
+
+type GetPeriodSummaryRow struct {
+	Total      float64 `json:"total"`
+	OrderCount int64   `json:"order_count"`
+}
+
+func (q *Queries) GetPeriodSummary(ctx context.Context, arg GetPeriodSummaryParams) (GetPeriodSummaryRow, error) {
+	row := q.db.QueryRow(ctx, getPeriodSummary, arg.StartAt, arg.EndAt)
+	var i GetPeriodSummaryRow
+	err := row.Scan(&i.Total, &i.OrderCount)
+	return i, err
+}
+
 const listFavRestaurants = `-- name: ListFavRestaurants :many
 SELECT
   COALESCE(SUM(total), 0)::numeric AS total,
+  COUNT(*) AS order_count,
   restaurant_name
 FROM orders
-WHERE order_date >= $1::date
+WHERE order_date >= $1::timestamptz
+  AND order_date < $2::timestamptz
 GROUP BY restaurant_name
 ORDER BY total DESC, restaurant_name
 LIMIT 10
 `
 
+type ListFavRestaurantsParams struct {
+	StartAt time.Time `json:"start_at"`
+	EndAt   time.Time `json:"end_at"`
+}
+
 type ListFavRestaurantsRow struct {
 	Total          float64 `json:"total"`
+	OrderCount     int64   `json:"order_count"`
 	RestaurantName string  `json:"restaurant_name"`
 }
 
-func (q *Queries) ListFavRestaurants(ctx context.Context, since time.Time) ([]ListFavRestaurantsRow, error) {
-	rows, err := q.db.Query(ctx, listFavRestaurants, since)
+func (q *Queries) ListFavRestaurants(ctx context.Context, arg ListFavRestaurantsParams) ([]ListFavRestaurantsRow, error) {
+	rows, err := q.db.Query(ctx, listFavRestaurants, arg.StartAt, arg.EndAt)
 	if err != nil {
 		return nil, err
 	}
@@ -46,10 +91,36 @@ func (q *Queries) ListFavRestaurants(ctx context.Context, since time.Time) ([]Li
 	items := []ListFavRestaurantsRow{}
 	for rows.Next() {
 		var i ListFavRestaurantsRow
-		if err := rows.Scan(&i.Total, &i.RestaurantName); err != nil {
+		if err := rows.Scan(&i.Total, &i.OrderCount, &i.RestaurantName); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrderYears = `-- name: ListOrderYears :many
+SELECT DISTINCT EXTRACT(YEAR FROM order_date)::int AS year
+FROM orders
+ORDER BY year DESC
+`
+
+func (q *Queries) ListOrderYears(ctx context.Context) ([]int32, error) {
+	rows, err := q.db.Query(ctx, listOrderYears)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int32{}
+	for rows.Next() {
+		var year int32
+		if err := rows.Scan(&year); err != nil {
+			return nil, err
+		}
+		items = append(items, year)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -78,6 +149,44 @@ func (q *Queries) ListOrders(ctx context.Context) ([]Order, error) {
 			&i.OrderDate,
 			&i.SyncedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrdersBetween = `-- name: ListOrdersBetween :many
+SELECT order_date, total
+FROM orders
+WHERE order_date >= $1::timestamptz
+  AND order_date < $2::timestamptz
+ORDER BY order_date
+`
+
+type ListOrdersBetweenParams struct {
+	StartAt time.Time `json:"start_at"`
+	EndAt   time.Time `json:"end_at"`
+}
+
+type ListOrdersBetweenRow struct {
+	OrderDate time.Time `json:"order_date"`
+	Total     float64   `json:"total"`
+}
+
+func (q *Queries) ListOrdersBetween(ctx context.Context, arg ListOrdersBetweenParams) ([]ListOrdersBetweenRow, error) {
+	rows, err := q.db.Query(ctx, listOrdersBetween, arg.StartAt, arg.EndAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOrdersBetweenRow{}
+	for rows.Next() {
+		var i ListOrdersBetweenRow
+		if err := rows.Scan(&i.OrderDate, &i.Total); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

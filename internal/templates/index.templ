@@ -1,0 +1,106 @@
+package templates
+
+import (
+	"strconv"
+	"time"
+)
+
+templ Index(p Period, years []int32) {
+	@Layout("nomnomwatch") {
+		<header class="topbar">
+			<div class="topbar-inner shell">
+				<div class="brand">
+					<span class="brand-mark" aria-hidden="true"></span>
+					<div>
+						<h1>nomnomwatch</h1>
+						<p>Takeaway spending</p>
+					</div>
+				</div>
+				@PeriodPicker(p, years)
+			</div>
+		</header>
+		<main class="dashboard shell">
+			<section class="tiles" aria-label="Summary">
+				// Doesn't depend on the period: loads once when the page opens.
+				<div class="slot" hx-get="/panels/last-order" hx-trigger="load">
+					@TileSkeleton()
+				</div>
+				// Depends on the period: loads on page open, and again whenever the
+				// #period form changes. hx-include adds the form's year/month to the URL.
+				<div
+					class="slot"
+					hx-get="/panels/summary"
+					hx-trigger="load, change from:#period"
+					hx-include="#period"
+				>
+					@TileSkeleton()
+					@TileSkeleton()
+					@TileSkeleton()
+				</div>
+			</section>
+			<section
+				class="card"
+				hx-get="/panels/monthly-spend"
+				hx-trigger="load, change from:#period"
+				hx-include="#period"
+			>
+				@ChartSkeleton()
+			</section>
+			<section
+				class="card"
+				hx-get="/panels/top-restaurants"
+				hx-trigger="load, change from:#period"
+				hx-include="#period"
+			>
+				@ListSkeleton()
+			</section>
+		</main>
+	}
+}
+
+// PeriodPicker has no htmx attributes itself; the panels listen for its
+// change events.
+templ PeriodPicker(p Period, years []int32) {
+	<form id="period" class="picker">
+		<select name="month" aria-label="Month">
+			<option value="" selected?={ p.Month == 0 }>All months</option>
+			for m := 1; m <= 12; m++ {
+				<option value={ strconv.Itoa(m) } selected?={ m == p.Month }>{ time.Month(m).String() }</option>
+			}
+		</select>
+		<select name="year" aria-label="Year">
+			for _, y := range years {
+				<option value={ strconv.Itoa(int(y)) } selected?={ int(y) == p.Year }>{ strconv.Itoa(int(y)) }</option>
+			}
+		</select>
+	</form>
+}
+
+templ PanelError(msg string) {
+	<p class="panel-error" role="alert">{ msg }</p>
+}
+
+templ TileSkeleton() {
+	<div class="tile" aria-hidden="true">
+		<span class="skeleton sk-label"></span>
+		<span class="skeleton sk-value"></span>
+	</div>
+}
+
+templ ChartSkeleton() {
+	<div aria-hidden="true">
+		<span class="skeleton sk-label"></span>
+		<span class="skeleton sk-chart"></span>
+	</div>
+}
+
+templ ListSkeleton() {
+	<div aria-hidden="true">
+		<span class="skeleton sk-label"></span>
+		<div style="margin-top: 22px">
+			for range 5 {
+				<span class="skeleton sk-line"></span>
+			}
+		</div>
+	</div>
+}

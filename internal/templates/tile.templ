@@ -1,0 +1,46 @@
+package templates
+
+import (
+	"strconv"
+	"strings"
+)
+
+templ Tile(label, value, unit, note string) {
+	<div class="tile">
+		<p class="tile-label">{ label }</p>
+		<p class="tile-value">
+			{ value }
+			if unit != "" {
+				<span class="tile-unit">{ unit }</span>
+			}
+		</p>
+		if note != "" {
+			<p class="tile-note">{ note }</p>
+		}
+	</div>
+}
+
+// money formats an amount with thousands separators, e.g. 1284.5 → "1,284.50".
+func money(v float64) string {
+	s := strconv.FormatFloat(v, 'f', 2, 64)
+	whole, frac, _ := strings.Cut(s, ".")
+	sign := ""
+	if strings.HasPrefix(whole, "-") {
+		sign, whole = "-", whole[1:]
+	}
+	var b strings.Builder
+	for i, d := range whole {
+		if i > 0 && (len(whole)-i)%3 == 0 {
+			b.WriteByte(',')
+		}
+		b.WriteRune(d)
+	}
+	return sign + b.String() + "." + frac
+}
+
+func plural(n int64, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}

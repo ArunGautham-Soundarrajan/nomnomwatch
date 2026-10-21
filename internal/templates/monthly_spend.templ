@@ -1,0 +1,190 @@
+package templates
+
+import (
+	"fmt"
+	"strconv"
+	"time"
+)
+
+type MonthPoint struct {
+	Month  time.Time
+	Total  float64
+	Orders int64
+}
+
+// MonthlySpend is one total per month of the selected year, up to the current
+// month. Partial is the index of the in-progress month, or -1.
+type MonthlySpend struct {
+	Period  Period
+	Months  []MonthPoint
+	Partial int
+}
+
+// Average is the mean of the completed months; the in-progress month is left
+// out so it doesn't drag the average down.
+func (m MonthlySpend) Average() (float64, bool) {
+	var sum float64
+	n := 0
+	for i, p := range m.Months {
+		if i == m.Partial {
+			continue
+		}
+		sum += p.Total
+		n++
+	}
+	if n == 0 {
+		return 0, false
+	}
+	return sum / float64(n), true
+}
+
+type chartData struct {
+	Labels   []string  `json:"labels"`
+	Titles   []string  `json:"titles"`
+	Totals   []float64 `json:"totals"`
+	Tooltips []string  `json:"tooltips"`
+	Average  *float64  `json:"average"`
+	Partial  int       `json:"partial"`
+	Selected int       `json:"selected"`
+}
+
+func (m MonthlySpend) chart() chartData {
+	d := chartData{Partial: m.Partial, Selected: -1}
+	for i, p := range m.Months {
+		title := p.Month.Format("January 2006")
+		if i == m.Partial {
+			title += " (so far)"
+		}
+		d.Labels = append(d.Labels, p.Month.Format("Jan"))
+		d.Titles = append(d.Titles, title)
+		d.Totals = append(d.Totals, p.Total)
+		d.Tooltips = append(d.Tooltips, money(p.Total)+" · "+orderCount(p.Orders))
+		if int(p.Month.Month()) == m.Period.Month {
+			d.Selected = i
+		}
+	}
+	if avg, ok := m.Average(); ok {
+		d.Average = &avg
+	}
+	return d
+}
+
+// thisMonthNote compares the in-progress month with the monthly average,
+// e.g. "October so far: 89.68 · 72% of your monthly average".
+func (m MonthlySpend) thisMonthNote() string {
+	avg, ok := m.Average()
+	if m.Partial < 0 || !ok || avg == 0 {
+		return ""
+	}
+	p := m.Months[m.Partial]
+	return fmt.Sprintf("%s so far: %s · %.0f%% of your monthly average", p.Month.Format("January"), money(p.Total), p.Total/avg*100)
+}
+
+templ MonthlySpendChart(m MonthlySpend) {
+	<div class="card-head">
+		<h2>Monthly spend · { strconv.Itoa(m.Period.Year) }</h2>
+		if avg, ok := m.Average(); ok {
+			<span>Avg { money(avg) } / month</span>
+		}
+	</div>
+	if len(m.Months) == 0 {
+		<p class="empty">No months to show yet.</p>
+	} else {
+		if note := m.thisMonthNote(); note != "" {
+			<p class="card-note">{ note }</p>
+		}
+		<div class="chart">
+			<canvas id="monthly-spend-chart" role="img" aria-label={ fmt.Sprintf("Line chart of monthly spending in %d", m.Period.Year) }></canvas>
+		</div>
+		<div class="sr-only">
+			<table>
+				<caption>Monthly spend in { strconv.Itoa(m.Period.Year) }</caption>
+				<thead>
+					<tr><th scope="col">Month</th><th scope="col">Spent</th><th scope="col">Orders</th></tr>
+				</thead>
+				<tbody>
+					for _, p := range m.Months {
+						<tr><td>{ p.Month.Format("January") }</td><td>{ money(p.Total) }</td><td>{ strconv.FormatInt(p.Orders, 10) }</td></tr>
+					}
+				</tbody>
+			</table>
+		</div>
+		@templ.JSONScript("monthly-spend-data", m.chart())
+		// htmx runs this script each time the panel is swapped in.
+		<script>
+			(() => {
+				const d = JSON.parse(document.getElementById("monthly-spend-data").textContent);
+				const css = getComputedStyle(document.documentElement);
+				const v = (name) => css.getPropertyValue(name).trim();
+				const accent = v("--accent"), muted = v("--muted"), border = v("--border"), surface = v("--surface"), ink = v("--ink");
+
+				const canvas = document.getElementById("monthly-spend-chart");
+				const fill = canvas.getContext("2d").createLinearGradient(0, 0, 0, canvas.parentElement.clientHeight);
+				fill.addColorStop(0, accent + "33");
+				fill.addColorStop(1, accent + "00");
+
+				const datasets = [{
+					data: d.totals,
+					borderColor: accent,
+					borderWidth: 2,
+					backgroundColor: fill,
+					fill: "origin",
+					cubicInterpolationMode: "monotone",
+					pointRadius: d.totals.map((_, i) => (i === d.selected ? 5 : 3)),
+					pointHoverRadius: 6,
+					pointBorderWidth: 2,
+					pointBorderColor: accent,
+					pointBackgroundColor: d.totals.map((_, i) => (i === d.selected ? accent : surface)),
+					// Dash the line into the in-progress month: it isn't finished yet.
+					segment: { borderDash: (ctx) => (ctx.p1DataIndex === d.partial ? [4, 4] : undefined) },
+				}];
+				if (d.average !== null) {
+					datasets.push({
+						data: d.totals.map(() => d.average),
+						borderColor: muted,
+						borderWidth: 1,
+						borderDash: [4, 4],
+						pointRadius: 0,
+						pointHoverRadius: 0,
+						fill: false,
+					});
+				}
+
+				window.monthlySpendChart?.destroy();
+				window.monthlySpendChart = new Chart(canvas, {
+					type: "line",
+					data: { labels: d.labels, datasets },
+					options: {
+						maintainAspectRatio: false,
+						interaction: { mode: "index", intersect: false },
+						plugins: {
+							legend: { display: false },
+							tooltip: {
+								filter: (item) => item.datasetIndex === 0,
+								displayColors: false,
+								backgroundColor: ink,
+								titleColor: surface,
+								bodyColor: surface,
+								padding: 10,
+								cornerRadius: 8,
+								callbacks: {
+									title: (items) => d.titles[items[0].dataIndex],
+									label: (item) => d.tooltips[item.dataIndex],
+								},
+							},
+						},
+						scales: {
+							x: { grid: { display: false }, border: { display: false }, ticks: { color: muted } },
+							y: {
+								beginAtZero: true,
+								grid: { color: border },
+								border: { display: false },
+								ticks: { color: muted, maxTicksLimit: 5 },
+							},
+						},
+					},
+				});
+			})();
+		</script>
+	}
+}
