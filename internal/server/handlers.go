@@ -3,7 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 )
 
@@ -20,7 +20,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 func (s *Server) orders(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.queries.ListOrdersMonthly(r.Context(), 2026)
 	if err != nil {
-		log.Printf("list orders failed: %v", err)
+		slog.ErrorContext(r.Context(), "list orders failed", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}

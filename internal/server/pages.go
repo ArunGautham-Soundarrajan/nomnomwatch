@@ -1,7 +1,7 @@
 package server
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -18,7 +18,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 
 	years, err := s.queries.ListOrderYears(r.Context())
 	if err != nil {
-		log.Printf("list order years failed: %v", err)
+		slog.ErrorContext(r.Context(), "list order years failed", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -27,6 +27,6 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := templates.Index(p, years).Render(r.Context(), w); err != nil {
-		log.Printf("render index failed: %v", err)
+		slog.ErrorContext(r.Context(), "render index failed", "err", err)
 	}
 }

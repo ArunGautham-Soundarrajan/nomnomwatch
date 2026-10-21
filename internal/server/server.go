@@ -30,5 +30,5 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /panels/monthly-spend", s.monthlySpendPanel)
 	mux.HandleFunc("GET /panels/last-order", s.lastOrderPanel)
 	mux.HandleFunc("GET /panels/top-restaurants", s.topRestaurantsPanel)
-	return mux
+	return logRequests(mux)
 }
